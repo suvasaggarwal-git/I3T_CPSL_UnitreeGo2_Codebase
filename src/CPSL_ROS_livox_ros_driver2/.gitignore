@@ -1,0 +1,8 @@
+.vscode
+build
+package.xml
+__pycache__
+install/*
+build/*
+log/*
+config/MID360_config.json
