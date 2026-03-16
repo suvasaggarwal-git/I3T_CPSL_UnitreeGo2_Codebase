@@ -3,7 +3,7 @@ from glob import glob
 import os
 
 
-package_name = 'launcher'
+package_name = 'go2_launcher'
 
 setup(
     name=package_name,
