@@ -87,10 +87,18 @@ def generate_aes_key() -> str:
     return uuid_32_hex_string
 
 
-def rsa_load_public_key(pem_data: str) -> RSA.RsaKey:
+def rsa_load_public_key(pem_data: str):
     """Load an RSA public key from a PEM-formatted string."""
-    key_bytes = base64.b64decode(pem_data)
-    return RSA.import_key(key_bytes)
+    try:
+        key_bytes = base64.b64decode(pem_data)
+    except Exception as b64_err:
+        logger.error(f"[rsa_load] base64 decode failed: {b64_err}; pem_data={pem_data[:60]!r}")
+        raise
+    logger.error(f"[rsa_load] pem_data len={len(pem_data)} first60={pem_data[:60]!r}")
+    logger.error(f"[rsa_load] key_bytes len={len(key_bytes)} first16={key_bytes[:16].hex()}")
+    with open("/tmp/go2_pubkey_debug.txt", "w") as f:
+        f.write(f"pem_data ({len(pem_data)}):\n{pem_data}\n\nkey_bytes_hex:\n{key_bytes.hex()}\n")
+    return RSA.importKey(key_bytes)
 
 
 def pad(data: str) -> bytes:
@@ -118,12 +126,12 @@ def aes_encrypt(data: str, key: str) -> str:
     return encoded_encrypted_data
 
 
-def rsa_encrypt(data: str, public_key: RSA.RsaKey) -> str:
+def rsa_encrypt(data: str, public_key) -> str:
     """Encrypt data using RSA and a given public key."""
     cipher = PKCS1_v1_5.new(public_key)
 
     # Maximum chunk size for encryption with RSA/ECB/PKCS1Padding is key size - 11 bytes
-    max_chunk_size = public_key.size_in_bytes() - 11
+    max_chunk_size = public_key.n.bit_length() // 8 - 11
     data_bytes = data.encode('utf-8')
 
     encrypted_bytes = bytearray()
@@ -297,6 +305,12 @@ class Go2Connection():
 
             # Extract the 'data1' field from the JSON
             data1 = decoded_json.get('data1')
+
+            data2 = decoded_json.get('data2', '')
+            with open("/tmp/go2_data1_debug.txt", "w") as _f:
+                _f.write(f"data1 (len={len(data1)}):\n{data1}\n\ndata2 (len={len(data2)}):\n{data2}\n\ndecoded_json keys: {list(decoded_json.keys())}\n")
+            logger.error(f"[connect] data1 len={len(data1)} first30={data1[:30]!r}")
+            logger.error(f"[connect] data2 len={len(data2)} first30={data2[:30]!r}")
 
             # Extract the public key from 'data1'
             public_key_pem = data1[10:len(data1)-10]

@@ -1,99 +1,84 @@
-import asyncio
-import threading
+import os
+import sys
+import socket
+import json
+import subprocess
+import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from geometry_msgs.msg import Twist
-from scripts.go2_func import gen_mov_command
-from scripts.webrtc_driver import Go2Connection
+
+SPORT_SOCKET   = "/tmp/go2_sport.sock"
+BRIDGE_SCRIPT  = os.path.join(os.path.dirname(__file__),
+                               '..', 'scripts', 'sport_bridge.py')
+BRIDGE_TIMEOUT = 15.0   # seconds to wait for bridge socket to appear
+
+
+def _start_bridge():
+    env = os.environ.copy()
+    env['LD_LIBRARY_PATH'] = (
+        '/home/unitree/cyclonedds_ws/install/cyclonedds/lib:'
+        + env.get('LD_LIBRARY_PATH', '')
+    )
+    env['CYCLONEDDS_URI'] = 'file:///home/unitree/cyclonedds_ws/cyclonedds.xml'
+    return subprocess.Popen(
+        [sys.executable, os.path.realpath(BRIDGE_SCRIPT)],
+        env=env,
+    )
+
 
 class CmdVelTranslator(Node):
-    def __init__(self):
+    def __init__(self, bridge_proc):
         super().__init__('cmd_vel_translator')
-        qos_profile = QoSProfile(depth=10)
+        self._bridge = bridge_proc
+        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        qos = QoSProfile(depth=10)
+        self.create_subscription(Twist, 'cmd_vel', self._cmd_vel_cb, qos)
+        self.get_logger().info(f"CmdVelTranslator ready — forwarding to {SPORT_SOCKET}")
 
-        # Declare + read launch-passed parameter (ROS2 Foxy style)
-        self.declare_parameter('internal_board_ip', '192.168.1.20')
-        self.internal_board_ip = (
-            self.get_parameter('internal_board_ip')
-            .get_parameter_value()
-            .string_value
-        )
-
-        self.webrtcConn = None
-        self.loop = None  # Asyncio event loop reference set later
-
-        self.get_logger().info(f"cmdVelTranslator using internal_board_ip: {self.internal_board_ip}")
-
-        self.create_subscription(
-            Twist,
-            'cmd_vel',
-            self.cmd_vel_cb,
-            qos_profile
-        )
-
-    def cmd_vel_cb(self, msg):
-        if self.webrtcConn is None or self.webrtcConn.data_channel is None:
-            return
-
-        x = msg.linear.x
-        y = msg.linear.y
-        z = msg.angular.z
-        if x != 0.0 or y != 0.0 or z != 0.0:
-            cmd = gen_mov_command(round(x, 2), round(y, 2), round(z, 2))
-
-            # Schedule the send on the asyncio loop to avoid thread issues
-            def safe_send():
-                try:
-                    self.webrtcConn.data_channel.send(cmd)
-                except Exception as e:
-                    self.get_logger().error(f"Failed to send via data_channel: {e}")
-
-            if self.loop is not None:
-                self.loop.call_soon_threadsafe(safe_send)
-
-    async def run(self):
-        self.get_logger().info("Creating Go2Connection and connecting...")
+    def _cmd_vel_cb(self, msg: Twist):
+        payload = json.dumps({
+            "vx":   round(msg.linear.x,  2),
+            "vy":   round(msg.linear.y,  2),
+            "vyaw": round(msg.angular.z, 2),
+        }).encode()
         try:
-            self.webrtcConn = Go2Connection(
-                robot_ip=self.internal_board_ip,
-                robot_num="1",
-                token="",
-            )
-            await self.webrtcConn.connect()
-            self.get_logger().info("Successfully connected to the robot!")
+            self._sock.sendto(payload, SPORT_SOCKET)
         except Exception as e:
-            self.get_logger().error(f"Connection failed: {e}")
+            self.get_logger().error(
+                f"cmd_vel send failed: {e}",
+                throttle_duration_sec=2.0
+            )
+
+    def destroy_node(self):
+        if self._bridge and self._bridge.poll() is None:
+            self._bridge.terminate()
+        super().destroy_node()
+
 
 def main(args=None):
+    # Start bridge subprocess before initialising ROS
+    bridge = _start_bridge()
+
+    # Wait for the socket to appear
+    deadline = time.monotonic() + BRIDGE_TIMEOUT
+    while not os.path.exists(SPORT_SOCKET):
+        if time.monotonic() > deadline:
+            print(f"[CmdVelTranslator] ERROR: sport_bridge socket never appeared "
+                  f"(bridge exit code: {bridge.poll()})", flush=True)
+            bridge.terminate()
+            return
+        time.sleep(0.2)
+
     rclpy.init(args=args)
-    node = CmdVelTranslator()
-
-    # Spin ROS in a separate thread
-    def ros_spin():
-        try:
-            rclpy.spin(node)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            rclpy.shutdown()
-
-    ros_thread = threading.Thread(target=ros_spin, daemon=True)
-    ros_thread.start()
-
-    # Run asyncio in main thread
-    async def async_main():
-        node.loop = asyncio.get_running_loop()  # Store event loop in node
-        await node.run()
-
-        # Keep the loop alive to allow aiortc to run background tasks
-        while rclpy.ok():
-            await asyncio.sleep(1)
-
+    node = CmdVelTranslator(bridge)
     try:
-        asyncio.run(async_main())
+        rclpy.spin(node)
     finally:
-        ros_thread.join()
+        node.destroy_node()
+        rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

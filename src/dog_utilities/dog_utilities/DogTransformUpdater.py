@@ -28,9 +28,6 @@ import os
 import threading
 import asyncio
 
-from cv_bridge import CvBridge
-
-
 #from scripts.go2_constants import ROBOT_CMD, RTC_TOPIC
 #from scripts.go2_func import gen_command, gen_mov_command
 #from scripts.go2_lidar_decoder import update_meshes_for_cloud2
@@ -120,7 +117,6 @@ class RobotBaseNode(Node):
 
         self.broadcaster = TransformBroadcaster(self, qos=qos_profile)
 
-        self.bridge = CvBridge()
         #self.camera_info = load_camera_info()
 
         self.robot_cmd_vel = {}

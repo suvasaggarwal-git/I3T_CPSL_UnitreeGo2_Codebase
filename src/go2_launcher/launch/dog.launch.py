@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
+from ament_index_python.packages import get_package_share_directory
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 import os
@@ -21,8 +21,10 @@ def generate_launch_description():
         DeclareLaunchArgument('collect_realsense', default_value='true'),
         DeclareLaunchArgument(
             'internal_board_ip',
-            default_value='192.168.1.20',
-            description='IP address of the robot internal board (string)'
+            default_value='192.168.123.161',
+            description='IP of the Go2 control board for WebRTC commands '
+                        '(signaling on :9991), reachable over eth0. '
+                        'NOT 192.168.1.78 -- that is this machine wlan0.'
         ),
 
         Node(
@@ -49,9 +51,6 @@ def generate_launch_description():
             executable='cmdVelTranslator',
             name='cmd_vel_translator',
             output='screen',
-            parameters=[{
-                'internal_board_ip': internal_board_ip
-            }]
         ),
         Node(
             package='intel_realsense_functions',
@@ -59,6 +58,12 @@ def generate_launch_description():
             name='get_intel_realsense_frames',
             output='screen',
             condition=IfCondition(collect_realsense)
+        ),
+        Node(
+            package='cpsl_nav',
+            executable='slamMapPosePub',
+            name='slam_map_pose',
+            output='screen'
         ),
         Node(
             package='pointcloud_to_laserscan',
