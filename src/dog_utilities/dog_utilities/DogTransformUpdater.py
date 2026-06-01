@@ -234,7 +234,7 @@ class RobotBaseNode(Node):
         self.joint_pub[0].publish(joint_state)
 
     def publish_lidar_cyclonedds(self, msg):
-        msg.header = Header(frame_id="radar")
+        msg.header = Header(frame_id="livox_frame")
         msg.header.stamp = self.get_clock().now().to_msg()
         self.go2_lidar_pub[0].publish(msg)
 
