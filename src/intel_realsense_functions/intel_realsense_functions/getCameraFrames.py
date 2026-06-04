@@ -55,11 +55,12 @@ class GetCameraFrames(Node):
                            0.0, 0.0, 1.0, 0.0]
         self.cam_info.r = [1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1.0]
         self.cam_info.d = [0.0]*5
-        self.cam_info.distortion_model = 'none'
+        self.cam_info.distortion_model = 'plumb_bob'
+        self.cam_info.header.frame_id = 'camera_color_optical_frame'
 
         # Timers
-        self.create_timer(0.5, lambda: self.camIntrPub.publish(self.cam_info))
-        self.create_timer(0.5, self.imagePubTimerCallback)
+        # self.create_timer(0.5, lambda: self.camIntrPub.publish(self.cam_info))
+        self.create_timer(0.067, self.imagePubTimerCallback)
 
         self.consecutive_timeouts = 0
 
@@ -77,6 +78,18 @@ class GetCameraFrames(Node):
         self.depth_sensor = dev.first_depth_sensor()
         self.depth_scale = self.depth_sensor.get_depth_scale()
         self.align = rs.align(rs.stream.color)
+
+        # Depth post-processing filters (applied in order each frame).
+        # Spatial: fills holes and smooths edges using neighboring pixels.
+        # Temporal: reduces per-pixel noise by blending with previous frames.
+        # Hole-filling: fills remaining invalid pixels with nearby valid depth.
+        self.spatial = rs.spatial_filter()
+        self.spatial.set_option(rs.option.filter_magnitude, 5)
+        self.spatial.set_option(rs.option.filter_smooth_alpha, 1.0)
+        self.spatial.set_option(rs.option.filter_smooth_delta, 50)
+        self.temporal = rs.temporal_filter()
+        self.hole_fill = rs.hole_filling_filter()
+        self.hole_fill.set_option(rs.option.holes_fill, 1)
 
         for _ in range(10):
             try:
@@ -131,6 +144,10 @@ class GetCameraFrames(Node):
             self.get_logger().warn("Got invalid frames (None). Skipping this tick.")
             return
 
+        depth = self.spatial.process(depth)
+        depth = self.temporal.process(depth)
+        depth = self.hole_fill.process(depth)
+
         depth_np = np.asanyarray(depth.get_data()).astype(np.float32) * self.depth_scale
         color_bgr = np.asanyarray(color.get_data())
         color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
@@ -138,15 +155,29 @@ class GetCameraFrames(Node):
         depth_np = np.ascontiguousarray(depth_np)
         color_rgb = np.ascontiguousarray(color_rgb)
 
-        try:
+        now = self.get_clock().now().to_msg()
+
+        color_msg = self.bridge.cv2_to_imgmsg(color_rgb, encoding='rgb8')
+        color_msg.header.stamp = now
+        color_msg.header.frame_id = 'camera_color_optical_frame'
+        
+        depth_msg = self.bridge.cv2_to_imgmsg(depth_np, encoding='32FC1')
+        depth_msg.header.stamp = now
+        depth_msg.header.frame_id = 'camera_color_optical_frame'
+        
+        self.cam_info.header.stamp = now
+        self.camIntrPub.publish(self.cam_info)   # publish cam_info here, same stamp
+
+        '''try:
             color_msg = self.bridge.cv2_to_imgmsg(color_rgb, encoding='rgb8')
             depth_msg = self.bridge.cv2_to_imgmsg(depth_np, encoding='32FC1')
         except CvBridgeError as e:
             self.get_logger().warn(f"CvBridge error: {e}")
-            return
+            return'''
 
         self.color_pub.publish(color_msg)
         self.depth_pub.publish(depth_msg)
+        
 
     def destroy_node(self):
         self._stop_pipeline()

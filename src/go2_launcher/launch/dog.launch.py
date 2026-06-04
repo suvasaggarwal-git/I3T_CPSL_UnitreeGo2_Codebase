@@ -15,10 +15,12 @@ def generate_launch_description():
 
     collect_realsense = LaunchConfiguration('collect_realsense')
     internal_board_ip = LaunchConfiguration('internal_board_ip')
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
     return LaunchDescription([
 
         DeclareLaunchArgument('collect_realsense', default_value='true'),
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument(
             'internal_board_ip',
             default_value='192.168.123.161',
@@ -66,27 +68,40 @@ def generate_launch_description():
             output='screen'
         ),
         Node(
-            package='pointcloud_to_laserscan',
-            executable='pointcloud_to_laserscan_node',
-            name='pc_to_scan',
+            package='cpsl_detection',
+            executable='yoloDetector',
+            name='yolo_detector',
             output='screen',
-            remappings=[
-                ('cloud_in', '/onboard_lidar_point_cloud2'),
-                ('scan', '/onboard_lidar_scan')
-            ],
             parameters=[{
-                'target_frame': '',  # or your robot base frame
-                'transform_tolerance': 0.01,
-                'min_height': -0.1,
-                'max_height': 0.1,
-                'angle_min': -3.14,
-                'angle_max': 3.14,
-                'angle_increment': 0.008,
-                'scan_time': 0.1,
-                'range_min': 1.5,
-                'range_max': 10.0,
-                'use_inf': True,
-                'inf_epsilon': 1.0
-            }]
+                'model_path': 'yolov8n.pt',
+                'confidence_threshold': 0.5,
+                'dedup_distance_m': 0.5,
+            }],
         ),
+
+        # commented out for 3dSLAM, make sure to uncomment this part for 2dSLAM using slam toolbox
+        # Node(
+        #     package='pointcloud_to_laserscan',
+        #     executable='pointcloud_to_laserscan_node',
+        #     name='pc_to_scan',
+        #     output='screen',
+        #     remappings=[
+        #         ('cloud_in', '/onboard_lidar_point_cloud2'),
+        #         ('scan', '/onboard_lidar_scan')
+        #     ],
+        #     parameters=[{
+        #         'target_frame': '',
+        #         'transform_tolerance': 0.01,
+        #         'min_height': -0.1,
+        #         'max_height': 0.1,
+        #         'angle_min': -3.14,
+        #         'angle_max': 3.14,
+        #         'angle_increment': 0.008,
+        #         'scan_time': 0.1,
+        #         'range_min': 1.5,
+        #         'range_max': 10.0,
+        #         'use_inf': True,
+        #         'inf_epsilon': 1.0
+        #     }]
+        # ),
     ])
