@@ -1,5 +1,5 @@
+import os
 import numpy as np
-import cv2
 
 import rclpy
 from rclpy.node import Node
@@ -37,7 +37,13 @@ class YoloDetector(Node):
         self.map_frame      = self.get_parameter('map_frame').value
 
         model_path = self.get_parameter('model_path').value
-        self.model = YOLO(model_path)
+        engine_path = model_path.replace('.pt', '.engine')
+        
+        if model_path.endswith('.pt') and not os.path.exists(engine_path):
+            self.get_logger().info(f'Exporting {model_path} to TensorRT engine...')
+            YOLO(model_path).export(format="engine", device="dla:0", half=True)
+
+        self.model = YOLO(engine_path if os.path.exists(engine_path) else model_path)
         self.get_logger().info(f'Loaded YOLO model: {model_path}')
 
         # ---- convert ros image to numpy array ----
@@ -60,6 +66,7 @@ class YoloDetector(Node):
 
         # publishers
         self.marker_pub = self.create_publisher(MarkerArray, '/detected_objects', 10)
+        self.point_pub  = self.create_publisher(PointStamped, '/detected_object_point', 10)
         self.annotated_pub = self.create_publisher(Image, '/yolo_annotated', 10)
 
         self.get_logger().info("YOLO detector node ready")
@@ -125,7 +132,15 @@ class YoloDetector(Node):
                 if self._is_duplicate(cls_name, p_map):
                     continue
                 self.known_objects.append((cls_name, p_map.copy()))
- 
+
+                pt_msg = PointStamped()
+                pt_msg.header.frame_id = self.map_frame
+                pt_msg.header.stamp    = msg.header.stamp
+                pt_msg.point.x = float(p_map[0])
+                pt_msg.point.y = float(p_map[1])
+                pt_msg.point.z = float(p_map[2])
+                self.point_pub.publish(pt_msg)
+
                 # --- build rviz markers (cube + floating label) ---
                 m_cube, m_text = self._make_markers(
                     p_map, cls_name, conf, msg.header.stamp)
@@ -198,7 +213,7 @@ class YoloDetector(Node):
         cube.pose.orientation.w = 1.0
         cube.scale.x = cube.scale.y = cube.scale.z = 0.2
         cube.color.r, cube.color.g, cube.color.b, cube.color.a = 0.1, 0.9, 0.2, 0.85
-        cube.lifetime = Duration(seconds=0).to_msg()   # 0 = persist forever
+        cube.lifetime = Duration(seconds=60).to_msg()   # 0 = persist forever
  
         label = Marker()
         label.header = cube.header
@@ -212,7 +227,7 @@ class YoloDetector(Node):
         label.scale.z = 0.15
         label.color.r = label.color.g = label.color.b = label.color.a = 1.0
         label.text = f'{cls_name} ({conf:.0%})'
-        label.lifetime = Duration(seconds=0).to_msg()
+        label.lifetime = Duration(seconds=60).to_msg()
  
         return cube, label
  
