@@ -89,6 +89,33 @@ Most of this process is taken care of by mounting the Livox according to the off
 ## Go2 Internal IP Configuration
 In order for the Go2 to receive commands from packages like Nav2, `cmd_vel` messages must be translated and sent to the Go2's internal board which handles all of its movement. As such, the `CmdVelTranslator.py` node within the `dog_utilities` needs a parameter `internal_board_ip` passed to it either when calling the main launch file, or when running the node itself. 
 
+## ROS2 SLAM Installation
+
+Install the required ROS 2 Foxy packages:
+
+```bash
+sudo apt install ros-foxy-pointcloud-to-laserscan
+sudo apt install ros-foxy-slam-toolbox
+```
+
+## Troubleshooting
+
+### Tsinghua Server Issues
+
+If you run into problems with the Tsinghua mirror server during installation, try upgrading first:
+
+```bash
+sudo apt upgrade
+```
+
+If that doesn't resolve the issue, switch the ROS source list from the Tsinghua mirror to Ubuntu's native ROS package server:
+
+```bash
+sudo sed -i 's|http://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu/|http://packages.ros.org/ros2/ubuntu/|g' /etc/apt/sources.list.d/ros-fish.list
+```
+
+This replaces the Tsinghua mirror with the official `packages.ros.org` source, which is useful when the Tsinghua mirror is expired or out of date.
+
 ## Using this repo
 1. Clone this repo and build and source the workspace
 1. Open 3 terminal windows and run the following
