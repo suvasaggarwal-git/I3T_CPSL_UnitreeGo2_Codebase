@@ -84,10 +84,10 @@ Run `make -j$(nproc)`
 If everything builds correctly, run `find . -name "pyrealsense2*.so"` within the build directory to file the .so filepath. Once you have this path, find the site packages location with `python3 -m site --user-site`. Then, use `cp` to copy the .so to the site packages location.
 
 ## Livox Setup
-Most of this process is taken care of by mounting the Livox according to the official docs from Unitree or whatever the target platform is. The interfacing of the Livox with the robot should be taken care of by the packages in this repo. However, you may need to change the `ip` parameter within the `src/CPSL_ROS_livox_ros_driver2/config/HAP_config.json` file to the IP of your Livox device (IP can be found on a sticker on the physical device).
+Most of this process is taken care of by mounting the Livox according to the official docs from Unitree or whatever the target platform is. The interfacing of the Livox with the robot should be taken care of by the packages in this repo. However, you may need to change the `ip` parameter within the `src/CPSL_ROS_livox_ros_driver2/config/MID360_config.json` file to the IP of your Livox device (IP can be found on a sticker on the physical device). If that sticker is not present, run `sudo arp-scan --interface=eth0 --localnet`, it can also help determine if the Livox is connected to the dog.
 
 ## Go2 Internal IP Configuration
-In order for the Go2 to receive commands from packages like Nav2, `cmd_vel` messages must be translated and sent to the Go2's internal board which handles all of its movement. As such, the `CmdVelTranslator.py` node within the `dog_utilities` needs a parameter `internal_board_ip` passed to it either when calling the main launch file, or when running the node itself. 
+In order for the Go2 to receive commands from packages like Nav2, `cmd_vel` messages must be translated and sent to the Go2's internal board which handles all of its movement. As such, the `CmdVelTranslator.py` node within the `dog_utilities` needs a parameter `internal_board_ip` passed to it either when calling the main launch file, or when running the node itself. This should be the ethernet IP.
 
 ## ROS2 SLAM Installation
 
