@@ -118,16 +118,22 @@ This replaces the Tsinghua mirror with the official `packages.ros.org` source, w
 
 ## ROS 3D Slam Installation
 
-# 1. RTAB-Map standalone library (dependency of the ROS wrapper)
+### 1. RTAB-Map standalone library (dependency of the ROS wrapper)
+```bash
 sudo apt install ros-foxy-rtabmap          # or build librtabmap from source
+```
 
-# 2. clone the branch you linked into your workspace src/
-cd ~/your_ws/src
+### 2. clone the branch you linked into your workspace src/
+```bash
+cd ~/I3T_CPSL_UnitreeGo2_Codebase/src
 git clone --branch foxy-devel https://github.com/introlab/rtabmap_ros.git
+```
 
-# 3. resolve deps and build
-cd ~/your_ws
+### 3. resolve deps and build
+```bash
+cd ~/I3T_CPSL_UnitreeGo2_Codebase
 rosdep install --from-paths src --ignore-src -r -y
+```
 
 ## Installing Ultralytics YOLO (JetPack 5.1.2)
 
