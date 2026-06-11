@@ -180,7 +180,7 @@ pip install onnxruntime_gpu-1.17.0-cp38-cp38-linux_aarch64.whl
 1. Open 3 terminal windows and run the following
     * `ros2 launch go2_launcher dog.launch.py internal_board_ip:=YOUR_IP_HERE collect_realsense:=true or false`
     * `ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py`
-    * `ros2 launch cpsl_nav slam.launch.py scan_topic:=/livox/scan_best_effort`
+    * `ros2 launch cpsl_nav slam.launch.py scan_topic:=/livox/scan_best_effort` if using 2D SLAM OR `ros2 launch cpsl_nav slam3d.launch.py rviz:=true` for 3D SLAM
 1. For getting a functional transform tree and mapping, that's all you need. If you want to issue Nav2 commands, open another terminal and run
-    * `ros2 launch cpsl_nav nav2_archived.py scan_topic:=/livox/scan_best_effort`
+    * `ros2 launch cpsl_nav nav2_go2.launch.py`
 
