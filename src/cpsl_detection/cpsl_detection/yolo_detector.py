@@ -20,7 +20,7 @@ class YoloDetector(Node):
 
         # params
         self.declare_parameter('model_path', 'yolov8n.pt')
-        self.declare_parameter('confidence_threshold', 0.5)
+        self.declare_parameter('confidence_threshold', 0.3)
         self.declare_parameter('depth_patch_size', 5)      # NxN median patch
         self.declare_parameter('dedup_distance_m', 0.5)    # meters
         self.declare_parameter('max_depth_m', 6.0)
@@ -41,7 +41,7 @@ class YoloDetector(Node):
         
         if model_path.endswith('.pt') and not os.path.exists(engine_path):
             self.get_logger().info(f'Exporting {model_path} to TensorRT engine...')
-            YOLO(model_path).export(format="engine", device="dla:0", half=True)
+            YOLO(model_path).export(format="engine", device=0, half=True)
 
         self.model = YOLO(engine_path if os.path.exists(engine_path) else model_path)
         self.get_logger().info(f'Loaded YOLO model: {model_path}')
@@ -60,7 +60,7 @@ class YoloDetector(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # subscribers
-        self.create_subscription(CameraInfo, '/depth_camera_instrinsics', self._caminfo_cb, 10)
+        self.create_subscription(CameraInfo, '/depth_camera_intrinsics', self._caminfo_cb, 10)
         self.create_subscription(Image, '/realsense_depth_image', self._depth_cb, 10)
         self.create_subscription(Image, '/realsense_rgb_image', self._rgb_cb, 10)
 

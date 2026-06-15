@@ -72,6 +72,7 @@ def generate_launch_description():
             executable='yoloDetector',
             name='yolo_detector',
             output='screen',
+            additional_env={'LD_PRELOAD': '/usr/lib/aarch64-linux-gnu/libgomp.so.1'},
             parameters=[{
                 'model_path': 'yolov8n.pt',
                 'confidence_threshold': 0.5,

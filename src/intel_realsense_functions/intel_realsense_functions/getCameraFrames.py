@@ -60,7 +60,7 @@ class GetCameraFrames(Node):
 
         # Timers
         # self.create_timer(0.5, lambda: self.camIntrPub.publish(self.cam_info))
-        self.create_timer(0.067, self.imagePubTimerCallback)
+        self.create_timer(0.5, self.imagePubTimerCallback)
 
         self.consecutive_timeouts = 0
 
