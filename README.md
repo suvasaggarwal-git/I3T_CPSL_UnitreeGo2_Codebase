@@ -183,11 +183,66 @@ pip install onnxruntime_gpu-1.17.0-cp38-cp38-linux_aarch64.whl
 > ```
 
 ## Using this repo
-1. Clone this repo and build and source the workspace
+1. Clone this repo. Build and source the workspace
 1. Open 3 terminal windows and run the following
-    * `ros2 launch go2_launcher dog.launch.py internal_board_ip:=YOUR_IP_HERE collect_realsense:=true or false`
-    * `ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py`
-    * `ros2 launch cpsl_nav slam.launch.py scan_topic:=/livox/scan_best_effort` if using 2D SLAM OR `ros2 launch cpsl_nav slam3d.launch.py rviz:=true` for 3D SLAM
+    * `ros2 launch go2_launcher dog.launch.py internal_board_ip:=YOUR_IP_HERE collect_realsense:=true or false` OR `dog_launch collect_realsense:=true`
+    * `ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py` OR `sensors_launch`
+    * `ros2 launch cpsl_nav slam.launch.py scan_topic:=/livox/scan_best_effort` OR `slam2d_launch` if using 2D SLAM OR `ros2 launch cpsl_nav slam3d.launch.py rviz:=true` OR `slam3d_launch rviz:=true`for 3D SLAM
 1. For getting a functional transform tree and mapping, that's all you need. If you want to issue Nav2 commands, open another terminal and run
-    * `ros2 launch cpsl_nav nav2_go2.launch.py`
+    * `ros2 launch cpsl_nav nav2_go2.launch.py` OR `nav2`
 
+Can also run shell script for functional tf tree, mapping, and rviz (Nav2 is separate):
+`./run_dog_2d.sh true` for 2D SLAM
+`./run_dog_3d.sh true` for 3D SLAM
+
+Kill the session by running `kill_dog`.
+
+# D1 Arm Usage Guide
+
+This section describes how to control the CPSL D1 Arm, including how to start the arm driver node, publish movement commands, and read current servo angles.
+
+---
+
+# D1 Arm Driver
+
+This package provides the driver and commands for operating the D1 Arm using ROS 2.
+
+## Starting the Arm Node
+
+To spin up the node that drives the arm, run the following command:
+
+`ros2 run cpsl_d1_arm_driver d1_arm_node` OR `start_d1`
+
+## Sending Commands
+
+You can send commands to the arm by publishing a string to the `/d1_arm/command` topic. Swap any of the supported command strings into the payload.
+
+**Example:**
+`ros2 topic pub --once /d1_arm/command std_msgs/msg/String "{data: 'grasp_3_1'}"` OR `move_d1 grasp_3_1`
+
+### Available Commands
+
+#### Left/Right Movements
+* `'left_1'`
+* `'left_2'`
+* `'right_1'`
+* `'right_2'`
+
+#### Grasp / Tool Movements
+* `'grasp_1_1'`
+* `'grasp_1_2'`
+* `'grasp_2_1'`
+* `'grasp_2_2'`
+* `'grasp_3_1'`
+* `'grasp_3_2'`
+* `'grasp_4_1'`
+* `'grasp_4_2'`
+
+#### Home
+* `'zero'`
+
+## Getting Current Servo Angles
+
+To retrieve the current joint angles of the arm's servos, run the following executable:
+
+`./build/CPSL_D1_Arm/get_arm_joint_angle` OR `get_d1_angles`
