@@ -135,6 +135,13 @@ cd ~/I3T_CPSL_UnitreeGo2_Codebase
 rosdep install --from-paths src --ignore-src -r -y
 ```
 
+If there is a build issue, run:
+```bash
+sudo bash -c 'for f in /usr/lib/aarch64-linux-gnu/libopencv_*.so.4.2.0;
+  do base="${f%.so.4.2.0}.so"; if [ ! -e "$base" ]; then ln -s "$f" "$base";
+  fi; done'
+```
+
 ## Installing Ultralytics YOLO (JetPack 5.1.2)
 
 Native installation of Ultralytics YOLO with TensorRT export support on a JetPack 5.1.2 Jetson device.
