@@ -1,6 +1,14 @@
 import os
 import numpy as np
 
+# Circumvent NumPy 1.24+ removal of deprecated np.bool / np.int / np.float aliases
+if not hasattr(np, 'bool'):
+    np.bool = bool
+if not hasattr(np, 'int'):
+    np.int = int
+if not hasattr(np, 'float'):
+    np.float = float
+
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time

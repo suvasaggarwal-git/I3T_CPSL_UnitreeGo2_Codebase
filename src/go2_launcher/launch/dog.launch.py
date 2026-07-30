@@ -23,7 +23,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument(
             'internal_board_ip',
-            default_value='192.168.123.161',
+            default_value='192.168.123.255',
             description='IP of the Go2 control board for WebRTC commands '
                         '(signaling on :9991), reachable over eth0. '
                         'NOT 192.168.1.78 -- that is this machine wlan0.'
