@@ -142,6 +142,13 @@ sudo bash -c 'for f in /usr/lib/aarch64-linux-gnu/libopencv_*.so.4.2.0;
   fi; done'
 ```
 
+## SportBridge Setup for Nav2 Commands
+```bash
+git clone https://github.com/unitreerobotics/unitree_sdk2_python.git ~/unitree_sdk2_python
+cd ~/unitree_sdk2_python
+pip install -e .
+```
+
 ## Installing Ultralytics YOLO (JetPack 5.1.2)
 
 Native installation of Ultralytics YOLO with TensorRT export support on a JetPack 5.1.2 Jetson device.
