@@ -98,3 +98,68 @@ In order for the Go2 to receive commands from packages like Nav2, `cmd_vel` mess
 1. For getting a functional transform tree and mapping, that's all you need. If you want to issue Nav2 commands, open another terminal and run
     * `ros2 launch cpsl_nav nav2_archived.py scan_topic:=/livox/scan_best_effort`
 
+## 3D SLAM with Livox and RealSense
+
+After updating this workspace on the robot, rebuild and source it:
+
+```bash
+colcon build --symlink-install --packages-select cpsl_nav intel_realsense_functions dog_utilities go2_launcher
+source install/setup.bash
+```
+
+Run these in separate terminals (source the workspace in each):
+
+```bash
+ros2 launch go2_launcher dog.launch.py collect_realsense:=true
+ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py
+ros2 launch cpsl_nav slam3d.launch.py rviz:=true
+```
+
+Default 3D mapping uses Livox geometry and RealSense visual features. LiDAR
+map points are not automatically colored with the camera image. RTAB-Map owns
+`map -> odom`; the Go2 pose bridge owns `odom -> base_link`. The separate 2D
+SLAM node is disabled by default. To also generate `/slam_toolbox/map`, use
+`enable_2d_slam:=true`; that node's TF publication stays disabled. Do not run
+the standalone 2D SLAM launch at the same time as 3D SLAM.
+
+Tune `src/cpsl_nav/config/slam3d.ini` for RTAB-Map range, map resolution,
+outlier filtering and ICP registration. The initial map range is 3.5 m, cells
+are 5 cm, and isolated points need five neighbors within 10 cm. Increase
+`Grid/RangeMax` for longer-range LiDAR maps after checking the short-range map.
+Neighbor filtering can remove thin or sparsely sampled objects. Launch selects
+`Grid/Sensor=0` for LiDAR or `1` with `rgbd_only:=true`; use RGB-D-only mode to
+compare camera-derived geometry. It still uses Go2 pose TF for odometry.
+An alternate core config can be passed with `config:=/absolute/path/slam3d.ini`.
+
+Tune `src/intel_realsense_functions/config/slam_camera.yaml` for camera depth
+range and spatial smoothing. Temporal filtering and hole filling start disabled
+to avoid smearing and inferred depths while walking. Restart the camera node
+after editing. An alternate camera config can be passed to `dog.launch.py`
+with `realsense_config:=/absolute/path/slam_camera.yaml`. The older `config.yaml`
+in that package contains a server URL and does not configure camera filtering.
+
+Camera global-time support is enabled when available, and frame acquisition
+timestamps are converted into ROS time before processing. A warning indicates
+fallback to receipt time if synchronized camera timestamps are unavailable.
+The Go2 pose bridge preserves nonzero source timestamps, falling back with a
+warning only for zero timestamps. Synchronize the robot and host clocks, and
+verify Livox timestamps use the same time base. The sensor synchronization
+tolerance can be changed with `approx_sync_max_interval:=0.05` (seconds).
+
+For optional ICP odometry, restart the Go2 launch with
+`publish_odom_tf:=false` and start 3D SLAM with `use_icp_odometry:=true`.
+ICP then owns `odom -> base_link` and supplies the odometry messages consumed
+by RTAB-Map. Do not leave Go2 odometry TF enabled in this mode. This is scan
+matching, not a LiDAR-IMU deskewing pipeline.
+
+The RViz view starts with the accumulated map visible and the live camera
+cloud hidden. Enable each raw/live cloud separately to compare stationary
+and slow-walking data. Physical mounting transforms remain in
+`src/dog_utilities/urdf/go2_with_realsense.urdf`; measure them on your robot
+before changing them. Persistent distortion during motion needs clock,
+mounting/vibration and LiDAR deskewing checks in addition to filtering.
+
+Mapping still starts fresh by default (`reset_map:=true`). Use
+`reset_map:=false` to resume a map. `localization:=true` always preserves the
+database, even when the reset argument is left at its default.
+

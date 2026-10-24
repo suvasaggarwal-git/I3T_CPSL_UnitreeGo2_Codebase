@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from sensor_msgs.msg import Image as ImageMsg
 from sensor_msgs.msg import CameraInfo
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy
@@ -13,6 +14,19 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 class GetCameraFrames(Node):
     def __init__(self):
         super().__init__('Get_camera_frames')
+
+        self.declare_parameters('', [
+            ('depth_min', 0.3), ('depth_max', 3.5),
+            ('spatial_magnitude', 2), ('spatial_alpha', 0.5),
+            ('spatial_delta', 20), ('temporal_enabled', False),
+            ('hole_filling_enabled', False),
+        ])
+        self.depth_min = self.get_parameter('depth_min').value
+        self.depth_max = self.get_parameter('depth_max').value
+        if not 0.0 <= self.depth_min < self.depth_max:
+            raise ValueError('Require 0 <= depth_min < depth_max')
+        self.temporal_enabled = self.get_parameter('temporal_enabled').value
+        self.hole_filling_enabled = self.get_parameter('hole_filling_enabled').value
 
         # ---- CONFIG (use lower bandwidth defaults) ----
         self.color_w, self.color_h, self.color_fps = 640, 480, 15
@@ -68,7 +82,13 @@ class GetCameraFrames(Node):
         self.profile = self.pipeline.start(self.config)
 
         dev = self.profile.get_device()
+        self._warned_timestamp_domain = False
         for s in dev.sensors:
+            if s.supports(rs.option.global_time_enabled):
+                try:
+                    s.set_option(rs.option.global_time_enabled, 1)
+                except RuntimeError as exc:
+                    self.get_logger().warn(f'Cannot enable RealSense global time: {exc}')
             if s.supports(rs.option.frames_queue_size):
                 try:
                     s.set_option(rs.option.frames_queue_size, 1)
@@ -79,14 +99,14 @@ class GetCameraFrames(Node):
         self.depth_scale = self.depth_sensor.get_depth_scale()
         self.align = rs.align(rs.stream.color)
 
-        # Depth post-processing filters (applied in order each frame).
-        # Spatial: fills holes and smooths edges using neighboring pixels.
-        # Temporal: reduces per-pixel noise by blending with previous frames.
-        # Hole-filling: fills remaining invalid pixels with nearby valid depth.
+        # D435 stereo smoothing operates in disparity space. Temporal history
+        # and inferred hole depths are disabled by default on a moving robot.
+        self.to_disparity = rs.disparity_transform(True)
+        self.to_depth = rs.disparity_transform(False)
         self.spatial = rs.spatial_filter()
-        self.spatial.set_option(rs.option.filter_magnitude, 5)
-        self.spatial.set_option(rs.option.filter_smooth_alpha, 1.0)
-        self.spatial.set_option(rs.option.filter_smooth_delta, 50)
+        self.spatial.set_option(rs.option.filter_magnitude, self.get_parameter('spatial_magnitude').value)
+        self.spatial.set_option(rs.option.filter_smooth_alpha, self.get_parameter('spatial_alpha').value)
+        self.spatial.set_option(rs.option.filter_smooth_delta, self.get_parameter('spatial_delta').value)
         self.temporal = rs.temporal_filter()
         self.hole_fill = rs.hole_filling_filter()
         self.hole_fill.set_option(rs.option.holes_fill, 1)
@@ -137,47 +157,73 @@ class GetCameraFrames(Node):
             return
 
         self.consecutive_timeouts = 0
-        aligned = self.align.process(frames)
-        depth = aligned.get_depth_frame()
-        color = aligned.get_color_frame()
+        depth = frames.get_depth_frame()
+        color = frames.get_color_frame()
         if not depth or not color:
             self.get_logger().warn("Got invalid frames (None). Skipping this tick.")
             return
 
-        depth = self.spatial.process(depth)
-        depth = self.temporal.process(depth)
-        depth = self.hole_fill.process(depth)
+        # Stamp acquisition, before filtering/alignment adds variable latency.
+        # Preserve each stream's capture time; RGB-D uses approximate sync.
+        color_stamp = self._capture_stamp(color)
+        depth_stamp = self._capture_stamp(depth)
+
+        # Filter native stereo depth before aligning it into color coordinates.
+        filtered = self.to_disparity.process(frames)
+        filtered = self.spatial.process(filtered)
+        if self.temporal_enabled:
+            filtered = self.temporal.process(filtered)
+        filtered = self.to_depth.process(filtered)
+        if self.hole_filling_enabled:
+            filtered = self.hole_fill.process(filtered)
+        aligned = self.align.process(filtered)
+        depth = aligned.get_depth_frame()
+        color = aligned.get_color_frame()
+        if not depth or not color:
+            return
 
         depth_np = np.asanyarray(depth.get_data()).astype(np.float32) * self.depth_scale
+        depth_np[(~np.isfinite(depth_np)) | (depth_np < self.depth_min) |
+                 (depth_np > self.depth_max)] = 0.0
         color_bgr = np.asanyarray(color.get_data())
         color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
 
         depth_np = np.ascontiguousarray(depth_np)
         color_rgb = np.ascontiguousarray(color_rgb)
 
-        now = self.get_clock().now().to_msg()
-
         color_msg = self.bridge.cv2_to_imgmsg(color_rgb, encoding='rgb8')
-        color_msg.header.stamp = now
+        color_msg.header.stamp = color_stamp
         color_msg.header.frame_id = 'camera_color_optical_frame'
         
         depth_msg = self.bridge.cv2_to_imgmsg(depth_np, encoding='32FC1')
-        depth_msg.header.stamp = now
+        depth_msg.header.stamp = depth_stamp
         depth_msg.header.frame_id = 'camera_color_optical_frame'
         
-        self.cam_info.header.stamp = now
-        self.camIntrPub.publish(self.cam_info)   # publish cam_info here, same stamp
-
-        '''try:
-            color_msg = self.bridge.cv2_to_imgmsg(color_rgb, encoding='rgb8')
-            depth_msg = self.bridge.cv2_to_imgmsg(depth_np, encoding='32FC1')
-        except CvBridgeError as e:
-            self.get_logger().warn(f"CvBridge error: {e}")
-            return'''
+        # Geometry is the color camera's, but this CameraInfo also accompanies
+        # aligned depth for depthimage_to_laserscan's exact camera subscriber.
+        self.cam_info.header.stamp = depth_stamp
+        self.camIntrPub.publish(self.cam_info)
 
         self.color_pub.publish(color_msg)
         self.depth_pub.publish(depth_msg)
         
+
+    def _capture_stamp(self, frame):
+        clock_now = self.get_clock().now()
+        domain = frame.get_frame_timestamp_domain()
+        if domain in (rs.timestamp_domain.system_time, rs.timestamp_domain.global_time):
+            # SDK timestamps are milliseconds on the host system clock. Apply
+            # frame age to ROS time so a different ROS clock epoch is respected.
+            age_ns = int((rs.get_time() - frame.get_timestamp()) * 1_000_000)
+            return Time(nanoseconds=max(0, clock_now.nanoseconds - max(0, age_ns)),
+                        clock_type=clock_now.clock_type).to_msg()
+        if not self._warned_timestamp_domain:
+            self.get_logger().warn(
+                'RealSense has no host-synchronized capture timestamp; using '
+                'receipt time before processing. Check global-time support '
+                'before diagnosing motion distortion.')
+            self._warned_timestamp_domain = True
+        return clock_now.to_msg()
 
     def destroy_node(self):
         self._stop_pipeline()

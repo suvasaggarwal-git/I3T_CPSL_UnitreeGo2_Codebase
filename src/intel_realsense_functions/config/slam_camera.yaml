@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    # Startup settings; restart the camera node after editing.
+    depth_min: 0.3
+    depth_max: 3.5
+    spatial_magnitude: 2
+    spatial_alpha: 0.5
+    spatial_delta: 20
+    # History and hole filling can smear/infer geometry during robot motion.
+    temporal_enabled: false
+    hole_filling_enabled: false

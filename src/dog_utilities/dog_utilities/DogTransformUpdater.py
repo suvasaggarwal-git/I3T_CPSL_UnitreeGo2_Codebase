@@ -60,6 +60,9 @@ class RobotBaseNode(Node):
 
     def __init__(self):
         super().__init__('dog_transform_updater')
+        self.declare_parameter('publish_odom_tf', True)
+        self.publish_odom_tf = self.get_parameter('publish_odom_tf').value
+        self._warned_zero_pose_stamp = False
 
         self.conn = {}
         qos_profile = QoSProfile(depth=10)
@@ -196,7 +199,15 @@ class RobotBaseNode(Node):
 
     def publish_body_poss_cyclonedds(self, msg):
         odom_trans = TransformStamped()
-        odom_trans.header.stamp = self.get_clock().now().to_msg()
+        stamp = msg.header.stamp
+        if stamp.sec == 0 and stamp.nanosec == 0:
+            if not self._warned_zero_pose_stamp:
+                self.get_logger().warn(
+                    'Go2 pose has a zero timestamp; using receipt time. '
+                    'Synchronize robot and host clocks for accurate SLAM.')
+                self._warned_zero_pose_stamp = True
+            stamp = self.get_clock().now().to_msg()
+        odom_trans.header.stamp = stamp
         odom_trans.header.frame_id = 'odom'
         odom_trans.child_frame_id = "base_link"
         odom_trans.transform.translation.x = msg.pose.position.x
@@ -206,7 +217,8 @@ class RobotBaseNode(Node):
         odom_trans.transform.rotation.y = msg.pose.orientation.y
         odom_trans.transform.rotation.z = msg.pose.orientation.z
         odom_trans.transform.rotation.w = msg.pose.orientation.w
-        self.broadcaster.sendTransform(odom_trans)
+        if self.publish_odom_tf:
+            self.broadcaster.sendTransform(odom_trans)
 
     def publish_joint_state_cyclonedds(self, msg):
         joint_state = JointState()

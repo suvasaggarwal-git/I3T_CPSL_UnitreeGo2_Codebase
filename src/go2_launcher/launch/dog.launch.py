@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.actions import DeclareLaunchArgument
 from ament_index_python.packages import get_package_share_directory
 from launch.conditions import IfCondition
@@ -21,6 +22,12 @@ def generate_launch_description():
 
         DeclareLaunchArgument('collect_realsense', default_value='true'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('publish_odom_tf', default_value='true',
+                             choices=['true', 'false'],
+                             description='Set false when SLAM uses ICP odometry'),
+        DeclareLaunchArgument('realsense_config', default_value=os.path.join(
+            get_package_share_directory('intel_realsense_functions'),
+            'config', 'slam_camera.yaml')),
         DeclareLaunchArgument(
             'internal_board_ip',
             default_value='192.168.123.161',
@@ -40,6 +47,11 @@ def generate_launch_description():
             package='dog_utilities',
             executable='transformUpdater',
             name='dog_transform_updater',
+            parameters=[{
+                'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+                'publish_odom_tf': ParameterValue(
+                    LaunchConfiguration('publish_odom_tf'), value_type=bool),
+            }],
             output='screen'
         ),
         Node(
@@ -59,6 +71,9 @@ def generate_launch_description():
             executable='getCameraFrames',
             name='get_intel_realsense_frames',
             output='screen',
+            parameters=[LaunchConfiguration('realsense_config'), {
+                'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+            }],
             condition=IfCondition(collect_realsense)
         ),
         Node(

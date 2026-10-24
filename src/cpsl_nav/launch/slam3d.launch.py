@@ -14,9 +14,16 @@ from launch_ros.actions import PushRosNamespace, Node
 
 pkg_cpsl_navigation = get_package_share_directory('cpsl_nav')
 pkg_rtabmap_launch = get_package_share_directory('rtabmap_launch')
-pkg_slam_toolbox = get_package_share_directory('slam_toolbox')
 
 ARGUMENTS = [
+    DeclareLaunchArgument('config', default_value=PathJoinSubstitution(
+        [pkg_cpsl_navigation, 'config', 'slam3d.ini']),
+        description='RTAB-Map core parameter file'),
+    DeclareLaunchArgument('enable_2d_slam', default_value='false',
+                          choices=['true', 'false'],
+                          description='Also build a separate 2D map (without publishing TF)'),
+    DeclareLaunchArgument('approx_sync_max_interval', default_value='0.05',
+                          description='Maximum RGB/depth/LiDAR synchronization interval in seconds'),
     DeclareLaunchArgument('use_sim_time', default_value='false',
                           choices=['true', 'false'],
                           description='Use sim time'),
@@ -40,7 +47,8 @@ ARGUMENTS = [
     DeclareLaunchArgument('rgbd_only', default_value='false',
                           choices=['true', 'false'],
                           description='Use RealSense RGB-D only (no LiDAR). '
-                                      'When false, fuses LiDAR geometry with RGB-D color/features.'),
+                                      'When false, maps LiDAR geometry and uses RGB-D features. '
+                                      'LiDAR map points are not automatically RGB-colored.'),
     DeclareLaunchArgument('reset_map', default_value='true',
                           choices=['true', 'false'],
                           description='Delete the RTAB-Map database on start so the map is cleared '
@@ -59,6 +67,10 @@ def launch_setup(context, *args, **kwargs):
     database_path = LaunchConfiguration('database_path')
     rgbd_only = context.perform_substitution(LaunchConfiguration('rgbd_only'))
     reset_map = context.perform_substitution(LaunchConfiguration('reset_map'))
+    icp_enabled = context.perform_substitution(use_icp_odometry) == 'true'
+    localizing = context.perform_substitution(localization) == 'true'
+    if icp_enabled and rgbd_only == 'true':
+        raise RuntimeError('use_icp_odometry requires rgbd_only:=false')
 
     rtabmap_launch_file = PathJoinSubstitution(
         [pkg_rtabmap_launch, 'launch', 'rtabmap.launch.py'])
@@ -70,42 +82,14 @@ def launch_setup(context, *args, **kwargs):
         # Pure RGB-D SLAM: RealSense depth+color drives everything.
         # Reg/Strategy 0 = visual feature matching for loop closure.
         subscribe_scan_cloud = 'false'
-        rtabmap_core_args = (
-            '--Reg/Strategy 0 '
-            '--RGBD/NeighborLinkRefining true '
-            '--Vis/MaxDepth 4.0 '
-            '--Vis/MinInliers 15 '
-            '--Grid/Sensor 1 '
-            '--Grid/3D true '
-            '--Grid/RangeMax 4.0 '
-            '--Grid/MinObstacleHeight 0.1 '
-            '--Grid/MaxObstacleHeight 1.5 '
-            '--cloud_voxel_size 0.02 '
-            '--cloud_decimation 1'
-        )
+        rtabmap_core_args = '--Reg/Strategy 0 --Grid/Sensor 1'
     else:
-        # Fused mode: LiDAR provides geometry, RGB-D adds visual loop closure
-        # and colors the output cloud_map.
+        # LiDAR map geometry, with RGB-D features for registration/loop closure.
         # Reg/Strategy 2 = ICP + visual features combined.
         subscribe_scan_cloud = 'true'
-        rtabmap_core_args = (
-            '--Rtabmap/DetectionRate 2.0 '
-            '--Reg/Strategy 2 '
-            '--RGBD/NeighborLinkRefining true '
-            '--Icp/PointToPlane true '
-            '--Icp/VoxelSize 0.1 '
-            '--Icp/PointToPlaneK 20 '
-            '--Vis/MaxDepth 4.0 '
-            '--Grid/Sensor 1 '
-            '--Grid/3D true '
-            '--Grid/RangeMax 10.0 '
-            '--Grid/MinObstacleHeight 0.1 '
-            '--Grid/MaxObstacleHeight 1.5 '
-            '--cloud_voxel_size 0.02 '
-            '--cloud_decimation 1'
-        )
+        rtabmap_core_args = '--Reg/Strategy 2 --Grid/Sensor 0'
 
-    if reset_map == 'true':
+    if reset_map == 'true' and not localizing:
         rtabmap_core_args += ' --delete_db_on_start'
 
     slam_3d = GroupAction([
@@ -115,31 +99,35 @@ def launch_setup(context, *args, **kwargs):
             PythonLaunchDescriptionSource(rtabmap_launch_file),
             launch_arguments=[
                 ('use_sim_time', use_sim_time),
+                ('cfg', LaunchConfiguration('config')),
                 ('frame_id', 'base_link'),
-                ('odom_frame_id', 'odom'),
+                # Use external TF by default. ICP mode must consume its own odom
+                # messages instead of silently continuing to use Go2 TF.
+                ('odom_frame_id', '' if icp_enabled else 'odom'),
+                ('vo_frame_id', 'odom'),
                 ('map_frame_id', 'map'),
 
                 # ---- sensor inputs ----
                 ('subscribe_scan_cloud', subscribe_scan_cloud),
                 ('scan_cloud_topic', scan_cloud_topic),
-                ('subscribe_depth', 'true'),
+                ('depth', 'true'),
+                ('subscribe_rgbd', 'true'),
                 ('rgb_topic', '/realsense_rgb_image'),
                 ('depth_topic', '/realsense_depth_image'),
                 ('camera_info_topic', '/depth_camera_intrinsics'),
-                # Tell RTAB-Map which TF frame the camera lives in so it can
-                # correctly project RGB onto the 3D cloud.
-                ('camera_frame_id', 'camera_color_optical_frame'),
                 ('rgbd_sync', 'true'),
+                ('approx_rgbd_sync', 'true'),
                 ('approx_sync', 'true'),
+                ('approx_sync_max_interval', LaunchConfiguration('approx_sync_max_interval')),
                 ('subscribe_scan', 'false'),
 
                 # ---- odometry: reuse Go2 odom by default ----
                 ('visual_odometry', 'false'),
                 ('icp_odometry', use_icp_odometry),
                 ('odom_topic', odom_topic),
-                # DogTransformUpdater owns odom->base_link; don't let RTAB-Map
-                # publish a competing transform.
-                ('publish_tf_odom', 'false'),
+                # In ICP mode, launch dog.launch.py with publish_odom_tf:=false.
+                ('publish_tf_odom', 'true' if icp_enabled else 'false'),
+                ('publish_tf_map', 'true'),
 
                 # ---- timing / QoS ----
                 ('qos', '2'),
@@ -155,20 +143,20 @@ def launch_setup(context, *args, **kwargs):
                 ('rviz', 'false'),
 
                 ('rtabmap_args', rtabmap_core_args),
-                ('odom_args', rtabmap_core_args),
             ],
         ),
 
         # 2D LiDAR occupancy map via slam_toolbox.
-        # Publishes to /slam_toolbox/map to avoid conflicting with RTAB-Map's /map.
+        # Topic remapping alone does not prevent map->odom TF conflicts.
         Node(
             package='slam_toolbox',
             executable='sync_slam_toolbox_node',
             name='slam_toolbox',
             output='screen',
+            condition=IfCondition(LaunchConfiguration('enable_2d_slam')),
             parameters=[
                 PathJoinSubstitution([pkg_cpsl_navigation, 'config', 'slam.yaml']),
-                {'use_sim_time': use_sim_time},
+                {'use_sim_time': use_sim_time, 'transform_publish_period': 0.0},
             ],
             remappings=[
                 ('scan', '/livox/scan_best_effort'),
@@ -177,8 +165,8 @@ def launch_setup(context, *args, **kwargs):
         ),
 
         # 2D laser scan slice from the RealSense depth image.
-        # scan_height=10 averages 10 rows around the image centre (~1m above floor
-        # with the camera pitched slightly down).  View on /realsense/scan in RViz.
+        # scan_height selects rows around the image centre; the converter takes
+        # the nearest valid depth in each column. View /realsense/scan in RViz.
         Node(
             package='depthimage_to_laserscan',
             executable='depthimage_to_laserscan_node',
@@ -205,8 +193,10 @@ def launch_setup(context, *args, **kwargs):
             name='realsense_color_cloud',
             output='screen',
             parameters=[{
-                'decimation': 1,
-                'voxel_size': 0.0,
+                'decimation': 2,
+                'voxel_size': 0.05,
+                'min_depth': 0.3,
+                'max_depth': 3.5,
                 'approx_sync': True,
                 'use_sim_time': use_sim_time,
             }],
