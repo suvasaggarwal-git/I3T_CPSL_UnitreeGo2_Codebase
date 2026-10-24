@@ -62,7 +62,11 @@ class RobotBaseNode(Node):
         super().__init__('dog_transform_updater')
         self.declare_parameter('publish_odom_tf', True)
         self.publish_odom_tf = self.get_parameter('publish_odom_tf').value
-        self._warned_zero_pose_stamp = False
+        # The Go2's pose stamps are on its internal board's clock. Use them only
+        # when that clock agrees with this one (on our dog it was 199 s behind).
+        self.declare_parameter('max_pose_stamp_offset', 0.5)
+        self.max_pose_stamp_offset = self.get_parameter('max_pose_stamp_offset').value
+        self._warned_pose_stamp = False
 
         self.conn = {}
         qos_profile = QoSProfile(depth=10)
@@ -200,13 +204,15 @@ class RobotBaseNode(Node):
     def publish_body_poss_cyclonedds(self, msg):
         odom_trans = TransformStamped()
         stamp = msg.header.stamp
-        if stamp.sec == 0 and stamp.nanosec == 0:
-            if not self._warned_zero_pose_stamp:
+        now = self.get_clock().now()
+        offset = (now.nanoseconds - (stamp.sec * 1_000_000_000 + stamp.nanosec)) * 1e-9
+        if abs(offset) > self.max_pose_stamp_offset:        # also a zero stamp
+            if not self._warned_pose_stamp:
                 self.get_logger().warn(
-                    'Go2 pose has a zero timestamp; using receipt time. '
-                    'Synchronize robot and host clocks for accurate SLAM.')
-                self._warned_zero_pose_stamp = True
-            stamp = self.get_clock().now().to_msg()
+                    f'Go2 pose stamps are {offset:.1f} s off this clock; using receipt time. '
+                    'Synchronize robot and host clocks to use the robot stamps.')
+                self._warned_pose_stamp = True
+            stamp = now.to_msg()
         odom_trans.header.stamp = stamp
         odom_trans.header.frame_id = 'odom'
         odom_trans.child_frame_id = "base_link"

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import time
+
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
@@ -176,7 +178,7 @@ class GetCameraFrames(Node):
         filtered = self.to_depth.process(filtered)
         if self.hole_filling_enabled:
             filtered = self.hole_fill.process(filtered)
-        aligned = self.align.process(filtered)
+        aligned = self.align.process(filtered.as_frameset())     # filters return a plain frame
         depth = aligned.get_depth_frame()
         color = aligned.get_color_frame()
         if not depth or not color:
@@ -212,11 +214,19 @@ class GetCameraFrames(Node):
         clock_now = self.get_clock().now()
         domain = frame.get_frame_timestamp_domain()
         if domain in (rs.timestamp_domain.system_time, rs.timestamp_domain.global_time):
-            # SDK timestamps are milliseconds on the host system clock. Apply
-            # frame age to ROS time so a different ROS clock epoch is respected.
-            age_ns = int((rs.get_time() - frame.get_timestamp()) * 1_000_000)
-            return Time(nanoseconds=max(0, clock_now.nanoseconds - max(0, age_ns)),
-                        clock_type=clock_now.clock_type).to_msg()
+            # SDK timestamps are milliseconds on the host system clock (this
+            # pyrealsense2 has no rs.get_time()). Apply frame age to ROS time
+            # so a different ROS clock epoch is respected.
+            age_ns = int((time.time() * 1000.0 - frame.get_timestamp()) * 1_000_000)
+            if 0 <= age_ns < 1_000_000_000:
+                return Time(nanoseconds=clock_now.nanoseconds - age_ns,
+                            clock_type=clock_now.clock_type).to_msg()
+            if not self._warned_timestamp_domain:
+                self.get_logger().warn(
+                    f'RealSense frame age {age_ns / 1e9:.3f} s is implausible; '
+                    'using receipt time before processing.')
+                self._warned_timestamp_domain = True
+            return clock_now.to_msg()
         if not self._warned_timestamp_domain:
             self.get_logger().warn(
                 'RealSense has no host-synchronized capture timestamp; using '

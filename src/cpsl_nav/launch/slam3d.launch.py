@@ -85,9 +85,10 @@ def launch_setup(context, *args, **kwargs):
         rtabmap_core_args = '--Reg/Strategy 0 --Grid/Sensor 1'
     else:
         # LiDAR map geometry, with RGB-D features for registration/loop closure.
-        # Reg/Strategy 2 = ICP + visual features combined.
+        # Reg/Strategy 1 = ICP on the LiDAR clouds (RGB-D features still detect
+        # loop closures).
         subscribe_scan_cloud = 'true'
-        rtabmap_core_args = '--Reg/Strategy 2 --Grid/Sensor 0'
+        rtabmap_core_args = '--Reg/Strategy 1 --Grid/Sensor 0'
 
     if reset_map == 'true' and not localizing:
         rtabmap_core_args += ' --delete_db_on_start'

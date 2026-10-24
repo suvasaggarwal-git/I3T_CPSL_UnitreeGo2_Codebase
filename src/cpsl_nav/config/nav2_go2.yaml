@@ -65,12 +65,15 @@ controller_server:
       time_steps: 30
       model_dt: 0.10
       batch_size: 2000
-      vx_max: 1.5
+      # Mapping speeds: a Livox scan takes 0.1 s and RTAB-Map 0.21.1 cannot deskew
+      # it (no "timestamp" field support), so fast turns smear the map
+      # (1.0 rad/s: ~6 deg per scan; was 2.5 rad/s: ~14 deg).
+      vx_max: 0.5
       vx_min: 0.0
       vy_max: 0.0
       vy_min: 0.0
-      wz_max: 2.5
-      wz_min: -2.5
+      wz_max: 1.0
+      wz_min: -1.0
       iteration_count: 1
       prune_distance: 1.5
       transform_tolerance: 0.2
