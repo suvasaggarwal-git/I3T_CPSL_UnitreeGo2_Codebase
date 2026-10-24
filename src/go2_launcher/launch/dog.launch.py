@@ -30,7 +30,7 @@ def generate_launch_description():
             'config', 'slam_camera.yaml')),
         DeclareLaunchArgument(
             'internal_board_ip',
-            default_value='192.168.123.161',
+            default_value='192.168.123.255',
             description='IP of the Go2 control board for WebRTC commands '
                         '(signaling on :9991), reachable over eth0. '
                         'NOT 192.168.1.78 -- that is this machine wlan0.'
@@ -87,6 +87,7 @@ def generate_launch_description():
             executable='yoloDetector',
             name='yolo_detector',
             output='screen',
+            additional_env={'LD_PRELOAD': '/usr/lib/aarch64-linux-gnu/libgomp.so.1'},
             parameters=[{
                 'model_path': 'yolov8n.pt',
                 'confidence_threshold': 0.5,
