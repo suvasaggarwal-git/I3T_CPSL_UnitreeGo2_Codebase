@@ -14,6 +14,7 @@ tmux split-window -v -t $SESSION:0.1
 
 # Split that bottom pane vertically again (Creates Pane 3)
 tmux split-window -v -t $SESSION:0.2
+tmux send-keys -t $SESSION:0.3 "ros2 launch cpsl_nav rviz_nav.launch.py config:=slam_3d_config.rviz" C-m
 
 # 3. Optional: Resize Pane 0 immediately so layouts look good
 tmux select-pane -t $SESSION:0.0

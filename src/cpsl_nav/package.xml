@@ -15,6 +15,7 @@
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>rtabmap_launch</exec_depend>
   <exec_depend>rtabmap_util</exec_depend>
+  <exec_depend>rtabmap_rviz_plugins</exec_depend>
   <exec_depend>depthimage_to_laserscan</exec_depend>
 
   <test_depend>ament_copyright</test_depend>

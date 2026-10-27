@@ -113,7 +113,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: RTAB-Map Cloud Map
+      Name: LiDAR Map (ground-obstacle colors)
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 2
@@ -124,10 +124,53 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /rtabmap/cloud_map
+        Value: /cloud_map
       Use Fixed Frame: true
       Use rainbow: false
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: rgb
+      Class: rtabmap_rviz_plugins/MapCloud
+      Cloud decimation: 2
+      Cloud from scan: false
+      Cloud max depth (m): 3.5
+      Cloud min depth (m): 0.3
+      Cloud voxel size (m): 0.05
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Download graph: false
+      Download map: false
+      Download namespace: /
+      Enabled: false
+      Filter ceiling (m): 0
+      Filter floor (m): 0
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: Camera RGB Map (accumulated)
+      Node filtering angle (degrees): 30
+      Node filtering radius (m): 0
+      Position Transformer: XYZ
+      Size (Pixels): 3
+      Size (m): 0.02
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mapData
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -146,7 +189,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: RealSense Live Cloud
+      Name: Camera RGB Cloud (live)
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
@@ -201,10 +244,10 @@ Visualization Manager:
       Color Scheme: map
       Draw Behind: false
       Enabled: false
-      Name: 2D LiDAR Map
+      Name: 2D SLAM Map (slam_toolbox)
       Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /slam_toolbox/map
@@ -221,14 +264,14 @@ Visualization Manager:
       Autocompute Value Bounds:
         Max Value: 10
         Min Value: -10
-        Value: true
+        Value: false
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/LaserScan
       Color: 255; 200; 0
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -248,7 +291,7 @@ Visualization Manager:
         Value: /livox/scan_best_effort
       Use Fixed Frame: true
       Use rainbow: false
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1

@@ -19,7 +19,7 @@ ARGUMENTS = [
     DeclareLaunchArgument('config', default_value=PathJoinSubstitution(
         [pkg_cpsl_navigation, 'config', 'slam3d.ini']),
         description='RTAB-Map core parameter file'),
-    DeclareLaunchArgument('enable_2d_slam', default_value='false',
+    DeclareLaunchArgument('enable_2d_slam', default_value='true',
                           choices=['true', 'false'],
                           description='Also build a separate 2D map (without publishing TF)'),
     DeclareLaunchArgument('approx_sync_max_interval', default_value='0.05',
@@ -199,6 +199,7 @@ def launch_setup(context, *args, **kwargs):
                 'min_depth': 0.3,
                 'max_depth': 3.5,
                 'approx_sync': True,
+                'approx_sync_max_interval': LaunchConfiguration('approx_sync_max_interval'),
                 'use_sim_time': use_sim_time,
             }],
             remappings=[
