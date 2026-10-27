@@ -218,12 +218,12 @@ ros2 launch cpsl_nav slam3d.launch.py rviz:=true
 Default 3D mapping uses Livox geometry and RealSense visual features. LiDAR
 map points are not automatically colored with the camera image. RTAB-Map owns
 `map -> odom`; the Go2 pose bridge owns `odom -> base_link`. The separate 2D
-SLAM node is disabled by default. To also generate `/slam_toolbox/map`, use
-`enable_2d_slam:=true`; that node's TF publication stays disabled. Do not run
+SLAM node generates `/slam_toolbox/map` by default, with its TF publication
+disabled. Use `enable_2d_slam:=false` to skip that extra mapping workload. Do not run
 the standalone 2D SLAM launch at the same time as 3D SLAM.
 
 Tune `src/cpsl_nav/config/slam3d.ini` for RTAB-Map range, map resolution,
-outlier filtering and ICP registration. The initial map range is 3.5 m, cells
+outlier filtering and ICP registration. The LiDAR map range is 10 m, cells
 are 5 cm, and isolated points need five neighbors within 10 cm. Increase
 `Grid/RangeMax` for longer-range LiDAR maps after checking the short-range map.
 Neighbor filtering can remove thin or sparsely sampled objects. Launch selects
@@ -241,8 +241,9 @@ in that package contains a server URL and does not configure camera filtering.
 Camera global-time support is enabled when available, and frame acquisition
 timestamps are converted into ROS time before processing. A warning indicates
 fallback to receipt time if synchronized camera timestamps are unavailable.
-The Go2 pose bridge preserves nonzero source timestamps, falling back with a
-warning only for zero timestamps. Synchronize the robot and host clocks, and
+The Go2 pose bridge preserves source timestamps within 0.5 s of its ROS clock,
+falling back to receipt time with a warning when they are farther off (including
+zero timestamps). Receipt time does not compensate for sensor/network latency. Synchronize the robot and host clocks, and
 verify Livox timestamps use the same time base. The sensor synchronization
 tolerance can be changed with `approx_sync_max_interval:=0.05` (seconds).
 
@@ -252,12 +253,39 @@ ICP then owns `odom -> base_link` and supplies the odometry messages consumed
 by RTAB-Map. Do not leave Go2 odometry TF enabled in this mode. This is scan
 matching, not a LiDAR-IMU deskewing pipeline.
 
-The RViz view starts with the accumulated map visible and the live camera
-cloud hidden. Enable each raw/live cloud separately to compare stationary
-and slow-walking data. Physical mounting transforms remain in
+Both `slam_3d_config.rviz` (normal launch / tmux script) and
+`slam_3d_yolo.rviz` (`start_slam3d.sh`) expose these independent checkboxes
+in RViz's **Displays** panel:
+
+| Display | Data | Starts visible |
+| --- | --- | --- |
+| LiDAR Map (ground-obstacle colors) | `/cloud_map`, existing map colors | Yes |
+| 2D SLAM Map (slam_toolbox) | `/slam_toolbox/map`, LiDAR occupancy grid | No |
+| Camera RGB Map (accumulated) | `/mapData`, RGB-D keyframes at optimized poses | No |
+| Camera RGB Cloud (live) | `/realsense/depth/color/points`, current aligned RGB + depth | No |
+
+Uncheck the LiDAR map and check the desired display to compare views, or check
+multiple displays to overlay them. The camera maps cover only valid camera
+depth within 0.3-3.5 m and the camera's field of view. The accumulated RGB map
+uses RTAB-Map's `MapCloud` plugin with **Cloud from scan: false** and
+**Color Transformer: RGB8**. This reconstructs camera geometry with actual
+image colors; it does not project camera colors onto the Livox points.
+If enabled after mapping has already started, request earlier keyframes after
+checking the display:
+
+```bash
+ros2 service call /publish_map rtabmap_msgs/srv/PublishMap "{global_map: true, optimized: true, graph_only: false}"
+```
+
+The bundled Foxy plugin's **Download map** button is unimplemented; use the
+service above instead. Topics are at the ROS root with the default launch
+namespace; prefix them appropriately if running a namespaced robot.
+The plugin package must be built/installed on the machine running RViz:
+`rtabmap_rviz_plugins` (binary package: `ros-foxy-rtabmap-rviz-plugins`).
+
+Physical mounting transforms remain in
 `src/dog_utilities/urdf/go2_with_realsense.urdf`; measure them on your robot
-before changing them. Persistent distortion during motion needs clock,
-mounting/vibration and LiDAR deskewing checks in addition to filtering.
+before changing them.
 
 Mapping still starts fresh by default (`reset_map:=true`). Use
 `reset_map:=false` to resume a map. `localization:=true` always preserves the

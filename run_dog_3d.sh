@@ -26,7 +26,7 @@ tmux send-keys -t $SESSION:0.2 "slam3d_launch" C-m
 # Pane 4: RViz (bottom-far-right)
 ###############################################
 tmux split-window -v -t $SESSION:0.2
-tmux send-keys -t $SESSION:0.3 "rviz2" C-m
+tmux send-keys -t $SESSION:0.3 "ros2 launch cpsl_nav rviz_nav.launch.py config:=slam_3d_config.rviz" C-m
 
 ###############################################
 # Optional: resize panes for readability
