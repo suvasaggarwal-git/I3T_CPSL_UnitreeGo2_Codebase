@@ -60,7 +60,19 @@ controller_server:
       xy_goal_tolerance: 0.35
       yaw_goal_tolerance: 0.20
       stateful: true
+    # Regulated Pure Pursuit. MPPI (FollowPathMPPI below, unused) is not built on the dog: it needs
+    # the xtensor, xsimd and xtl libraries. To use it, build src/nav2_mppi_controller and rename
+    # FollowPathMPPI to FollowPath (and this block to something else).
+    # Mapping speeds: a Livox scan takes 0.1 s and RTAB-Map 0.21.1 cannot deskew it (no
+    # "timestamp" field support), so fast turns smear the map (1.0 rad/s: ~6 deg per scan).
     FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.5
+      lookahead_dist: 0.6
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 1.0
+      transform_tolerance: 0.2
+    FollowPathMPPI:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 30
       model_dt: 0.10
