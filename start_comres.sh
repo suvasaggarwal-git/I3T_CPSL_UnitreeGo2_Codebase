@@ -1,53 +1,70 @@
 #!/bin/bash
-# A COMRES mission from this dog, in one Terminator window on its desktop (e.g. through NoMachine):
+# COMRES missions from this dog, in Terminator windows on its desktop (e.g. through NoMachine).
 #
-#   comres_explore [target class(es)]               explore, with no prior information
-#   comres_search "<hint>" [target class(es)]       search, with the prior in plain words, e.g.
-#       comres_search "The backpack is in the room north of the start." backpack
-#
-#   driver (dog.launch.py)       | sensors (Livox)
-#   3D SLAM (RTAB-Map), +20 s    | Nav2, +35 s
-#   RViz (maps and YOLO), +25 s  | COMRES bridge, +40 s
+# In two steps (aliases comres_explore_prep / comres_search_prep, then comres_explore_start /
+# comres_search_start):
+#   start_comres.sh prep                            driver, sensors, 3D SLAM (+20 s), RViz (+25 s):
+#                                                   drive the dog by hand for a first map
+#   start_comres.sh start explore [class]           then, beside it: Nav2 and the COMRES bridge,
+#   start_comres.sh start search "<hint>" [class]   which asks for the mission; COMRES plans on the
+#                                                   map so far and sends the dog its waypoints
+#       e.g. comres_search_start "The backpack is in the room north of the start." backpack
+# At once: start_comres.sh explore [class]  |  start_comres.sh search "<hint>" [class]
 #
 # The bridge (~/comres_bridge: dog_bridge.py, dog_wire.py and comres_bt.xml from COMRES-VLM-ROS)
-# asks the central computer for the mission once Nav2 is up and there is a map; the COMRES node
-# there (tools/comres_central.sh) starts it. Without a target class, the central config's is used
-# (search ends when the YOLO sees it). Ctrl-C in a pane stops that part; closing the window stops
-# everything, and the bridge then cancels the robot's goals.
+# asks the central computer (tools/comres_central.sh) for the mission once Nav2 is up and there is
+# a map; COMRES starts it there. Without a target class, the central config's is used. RViz shows
+# the map, the YOLO, the waypoint COMRES gave (/comres/goal) and Nav2's path. Ctrl-C in a pane
+# stops that part; closing a window stops its parts (the bridge then cancels the robot's goals).
 
 WS="$HOME/I3T_CPSL_UnitreeGo2_codebase"
 BRIDGE="${COMRES_BRIDGE:-$HOME/comres_bridge}"
 RVIZ="$WS/install/cpsl_nav/share/cpsl_nav/rviz_cfgs/slam_3d_yolo.rviz"
-CFG="${XDG_RUNTIME_DIR:-/tmp}/comres.terminator"
+CFG="${XDG_RUNTIME_DIR:-/tmp}/comres-$$.terminator"
+USAGE="usage: $0 prep | start explore [class] | start search \"<hint>\" [class] | explore [class] | search \"<hint>\" [class]"
 
+STEP=all
 case "$1" in
-    explore) export COMRES_TASK=explore COMRES_HINT="" COMRES_TARGETS="$2" ;;
-    search)
-        if [ $# -lt 2 ]; then
-            echo "usage: comres_search \"<hint>\" [target class(es)]" >&2
-            exit 1
-        fi
-        export COMRES_TASK=search COMRES_HINT="$2" COMRES_TARGETS="$3" ;;
-    *)
-        echo "usage: $0 explore [target class(es)] | search \"<hint>\" [target class(es)]" >&2
-        exit 1 ;;
+    prep) STEP=prep ;;
+    start) STEP=start; shift ;;
 esac
+if [ "$STEP" != prep ]; then
+    case "$1" in
+        explore) export COMRES_TASK=explore COMRES_HINT="" COMRES_TARGETS="$2" ;;
+        search)
+            [ $# -ge 2 ] || { echo "$USAGE" >&2; exit 1; }
+            export COMRES_TASK=search COMRES_HINT="$2" COMRES_TARGETS="$3" ;;
+        *) echo "$USAGE" >&2; exit 1 ;;
+    esac
+fi
 export COMRES_ROBOT="${COMRES_ROBOT:-go2_1}"
 
 if [ -z "$DISPLAY" ]; then
     echo "No display: run this on the dog's desktop (e.g. through NoMachine)." >&2
     exit 1
 fi
-if [ ! -f "$BRIDGE/dog_bridge.py" ]; then
+if [ "$STEP" != prep ] && [ ! -f "$BRIDGE/dog_bridge.py" ]; then
     echo "No $BRIDGE/dog_bridge.py: copy dog_bridge.py, dog_wire.py and comres_bt.xml there from COMRES-VLM-ROS." >&2
     exit 1
 fi
-RUNNING="bin/ros2 launch|lib/rviz2/rviz2|dog_bridge.py"
-if pgrep -f "$RUNNING" >/dev/null; then
-    echo "ROS is already running on this dog:" >&2
-    pgrep -af "$RUNNING" | cut -c1-120 >&2
-    echo "Close its window first, or: pkill -INT -f '$RUNNING'" >&2
-    exit 1
+running() { pgrep -f "$1" >/dev/null; }
+if [ "$STEP" = start ]; then
+    if ! running "go2_launcher.*dog.launch.py" || ! running "cpsl_nav.*slam3d.launch.py"; then
+        echo "The driver and the 3D SLAM are not running: comres_${COMRES_TASK}_prep first." >&2
+        exit 1
+    fi
+    if running "nav2_go2.launch.py|dog_bridge.py"; then
+        echo "Nav2 or the COMRES bridge already runs: close their window first." >&2
+        exit 1
+    fi
+else
+    RUNNING="bin/ros2 launch|lib/rviz2/rviz2|dog_bridge.py"
+    if running "$RUNNING"; then
+        echo "ROS is already running on this dog:" >&2
+        pgrep -af "$RUNNING" | cut -c1-120 >&2
+        echo "Close its window first, or: pkill -INT -f '$RUNNING'" >&2
+        exit 1
+    fi
 fi
 
 # The panes inherit this environment (as ~/.bashrc sets it up) and the mission above.
@@ -58,81 +75,59 @@ source "$WS/install/setup.bash"
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=~/cyclonedds_ws/cyclonedds.xml
 
-# A pane's command: wait $1 s, run $2, then keep the pane open with a shell.
-# (No commas or quotes: they would break Terminator's config syntax.)
-pane() {
-    echo "sleep $1; $2; echo; echo [$3 ended - Ctrl-D closes this pane]; exec bash"
-}
+# The panes, "delay|title|command" (no commas, quotes or |: they would break Terminator's config).
+DRIVER="0|driver|ros2 launch go2_launcher dog.launch.py collect_realsense:=true"
+SENSORS="2|sensors|ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py"
+SLAM="20|3D SLAM|ros2 launch cpsl_nav slam3d.launch.py"
+SHOW="25|RViz|rviz2 -d $RVIZ"
+case "$STEP" in
+    prep)  TITLE="Go2 COMRES prep: drive by hand"
+           PANES=("$DRIVER" "$SENSORS" "$SLAM" "$SHOW") ;;
+    start) TITLE="Go2 COMRES $COMRES_TASK"
+           PANES=("0|Nav2|ros2 launch cpsl_nav nav2_go2.launch.py"
+                  "5|COMRES bridge|python3 $BRIDGE/dog_bridge.py --robot $COMRES_ROBOT") ;;
+    all)   TITLE="Go2 COMRES $COMRES_TASK"
+           PANES=("$DRIVER" "$SENSORS" "$SLAM" "35|Nav2|ros2 launch cpsl_nav nav2_go2.launch.py" "$SHOW"
+                  "40|COMRES bridge|python3 $BRIDGE/dog_bridge.py --robot $COMRES_ROBOT") ;;
+esac
 
-cat > "$CFG" <<EOF
-[global_config]
-  suppress_multiple_term_dialog = True
-[keybindings]
-[profiles]
-  [[default]]
-    scrollback_lines = 10000
-[layouts]
-  [[comres]]
-    [[[window0]]]
-      type = Window
-      parent = ""
-      title = Go2 COMRES $COMRES_TASK
-      size = 1500, 1000
-    [[[root]]]
-      type = VPaned
-      parent = window0
-      order = 0
-    [[[top]]]
-      type = HPaned
-      parent = root
-      order = 0
-    [[[rest]]]
-      type = VPaned
-      parent = root
-      order = 1
-    [[[middle]]]
-      type = HPaned
-      parent = rest
-      order = 0
-    [[[bottom]]]
-      type = HPaned
-      parent = rest
-      order = 1
-    [[[driver]]]
-      type = Terminal
-      parent = top
-      order = 0
-      command = $(pane 0 "ros2 launch go2_launcher dog.launch.py collect_realsense:=true" driver)
-    [[[sensors]]]
-      type = Terminal
-      parent = top
-      order = 1
-      command = $(pane 2 "ros2 launch cpsl_ros2_sensors_bringup ugv_sensor_bringup.launch.py" sensors)
-    [[[slam]]]
-      type = Terminal
-      parent = middle
-      order = 0
-      command = $(pane 20 "ros2 launch cpsl_nav slam3d.launch.py" "3D SLAM")
-    [[[nav2]]]
-      type = Terminal
-      parent = middle
-      order = 1
-      command = $(pane 35 "ros2 launch cpsl_nav nav2_go2.launch.py" Nav2)
-    [[[rviz]]]
-      type = Terminal
-      parent = bottom
-      order = 0
-      command = $(pane 25 "rviz2 -d $RVIZ" RViz)
-    [[[bridge]]]
-      type = Terminal
-      parent = bottom
-      order = 1
-      command = $(pane 40 "python3 $BRIDGE/dog_bridge.py --robot $COMRES_ROBOT" "COMRES bridge")
-[plugins]
-EOF
+# A pane's command: wait, run, then keep the pane open with a shell.
+pane() {
+    IFS='|' read -r delay title cmd <<< "$1"
+    echo "sleep $delay; $cmd; echo; echo [$title ended - Ctrl-D closes this pane]; exec bash"
+}
+# Two panes a row: the rows nest in VPaneds, a row of two is an HPaned.
+layout() {
+    local n=${#PANES[@]} rows=$(( (${#PANES[@]} + 1) / 2 )) parent=window0 order=0 r rp ro
+    printf '[global_config]\n  suppress_multiple_term_dialog = True\n[keybindings]\n[profiles]\n'
+    printf '  [[default]]\n    scrollback_lines = 10000\n[layouts]\n  [[comres]]\n'
+    printf '    [[[window0]]]\n      type = Window\n      parent = ""\n      title = %s\n      size = 1500, %d\n' "$TITLE" $((330 * rows))
+    for ((r = 0; r < rows; r++)); do
+        rp=$parent; ro=$order
+        if ((r < rows - 1)); then
+            printf '    [[[v%d]]]\n      type = VPaned\n      parent = %s\n      order = %d\n' $r "$parent" $order
+            rp=v$r; ro=0; parent=v$r; order=1
+        fi
+        if ((2 * r + 1 < n)); then
+            printf '    [[[h%d]]]\n      type = HPaned\n      parent = %s\n      order = %d\n' $r "$rp" $ro
+            printf '    [[[t%d]]]\n      type = Terminal\n      parent = h%d\n      order = 0\n      command = %s\n' $((2 * r)) $r "$(pane "${PANES[2 * r]}")"
+            printf '    [[[t%d]]]\n      type = Terminal\n      parent = h%d\n      order = 1\n      command = %s\n' $((2 * r + 1)) $r "$(pane "${PANES[2 * r + 1]}")"
+        else
+            printf '    [[[t%d]]]\n      type = Terminal\n      parent = %s\n      order = %d\n      command = %s\n' $((2 * r)) "$rp" $ro "$(pane "${PANES[2 * r]}")"
+        fi
+    done
+    printf '[plugins]\n'
+}
+layout > "$CFG"
 
 cd "$WS"                                   # the YOLO node loads yolov8n.engine from here
 terminator -u -g "$CFG" -l comres >/dev/null 2>&1 &
 disown
-echo "Started a $COMRES_TASK mission for $COMRES_ROBOT${COMRES_HINT:+, hint: $COMRES_HINT}${COMRES_TARGETS:+, targets: $COMRES_TARGETS}."
-echo "Driver and sensors now, 3D SLAM in 20 s, Nav2 in 35 s, the bridge in 40 s; COMRES starts when the dog is ready."
+case "$STEP" in
+    prep)  echo "Started the prep: driver and sensors now, 3D SLAM in 20 s, RViz in 25 s. Drive the dog by hand"
+           echo "for a first map, then: comres_explore_start, or comres_search_start \"<hint>\" [class]" ;;
+    start) echo "Started Nav2 and the COMRES bridge for a $COMRES_TASK mission${COMRES_HINT:+, hint: $COMRES_HINT}${COMRES_TARGETS:+, targets: $COMRES_TARGETS}."
+           echo "COMRES starts when Nav2 is up (the central computer must run tools/comres_central.sh)." ;;
+    all)   echo "Started a $COMRES_TASK mission for $COMRES_ROBOT${COMRES_HINT:+, hint: $COMRES_HINT}${COMRES_TARGETS:+, targets: $COMRES_TARGETS}."
+           echo "Driver and sensors now, 3D SLAM in 20 s, Nav2 in 35 s, the bridge in 40 s; COMRES starts when the dog is ready." ;;
+esac
